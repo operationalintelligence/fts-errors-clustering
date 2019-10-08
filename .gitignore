@@ -5,6 +5,9 @@
 # Data sample files
 issues.json
 
+# Swan project
+.swanproject
+
 ### TEMPLATE (to check)
 
 # Byte-compiled / optimized / DLL files
