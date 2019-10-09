@@ -35,3 +35,6 @@ conda config --get channels
 --add channels 'defaults'
 --add channels 'conda-forge'   # highest priority
 ```
+
+##### Maintainers:
+<sub>Luca Clissa</sub>
