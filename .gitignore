@@ -5,6 +5,9 @@
 # Data sample files
 issues.json
 
+# Jupyter Notebooks tutorials
+notebooks/*utorial*
+
 # Swan project
 .swanproject
 
