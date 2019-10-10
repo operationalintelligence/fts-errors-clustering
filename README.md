@@ -36,5 +36,11 @@ conda config --get channels
 --add channels 'conda-forge'   # highest priority
 ```
 
+## Sample data
+The sample data can be obtained running the python code *fetch_issues.py* from the root of the repository:
+```r
+python code/fetch_issues.py
+```
+
 ##### Maintainers:
 <sub>Luca Clissa</sub>
