@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-#Copyright 2018 Luca Clissa, Marco Dalla, Roberto Morelli
+#Copyright 2018 Luca Clissa
 #Licensed under the Apache License, Version 2.0 (the "License");
 #you may not use this file except in compliance with the License.
 #You may obtain a copy of the License at
@@ -13,7 +13,7 @@
 """
 Created on Tue Oct  8 10:13:27 2019
 
-@author: luca
+@author: Panos Paparrigopoulos
 """
 
 import urllib.request, json, sys
