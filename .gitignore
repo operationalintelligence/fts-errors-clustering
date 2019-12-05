@@ -7,6 +7,7 @@ issues.json
 
 # Jupyter Notebooks tutorials
 notebooks/*utorial*
+notebooks/.sys.*
 
 # Swan project
 .swanproject
