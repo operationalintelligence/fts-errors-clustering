@@ -13,7 +13,7 @@ To use the code, simply open a terminal and run:
 
 ```r
 #clone the repository
-git clone https://github.com/operationalintelligence/rucio-log-clustering.git`
+git clone https://github.com/operationalintelligence/rucio-log-clustering.git
 
 #enter the folder
 cd rucio-log-clustering
