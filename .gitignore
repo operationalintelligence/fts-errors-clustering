@@ -4,6 +4,7 @@
 
 # Data sample files
 issues.json
+notebooks/*.csv
 
 # Jupyter Notebooks tutorials
 notebooks/*utorial*
