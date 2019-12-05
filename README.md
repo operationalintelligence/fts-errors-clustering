@@ -1,5 +1,5 @@
-# Rucio log clustering
-This project contains attempts for clustering Rucio data transfer errors. The idea is to leverage an *unsupervised* approach to avoid prior expectations about what the error categories are and, hence, in the hope of discovering new failure patterns.
+# Clustering of FTS error messages
+This project contains attempts for clustering FTS data transfer errors. The idea is to leverage an *unsupervised* approach to avoid prior expectations about what the error categories are and, hence, in the hope of discovering new failure patterns.
 
 ## Structure
 The repository is mainly organised into 3 folders:
@@ -36,11 +36,20 @@ conda config --get channels
 --add channels 'conda-forge'   # highest priority
 ```
 
+## Usage
+Currently, 4 notebooks are available to perform and end-to-end analysis:
+ - 010_FTS_data_extraction to extract FTS data directly from Hadoop
+ - 020_NLP_on_FTS to apply word2vec language model on the selected data
+ - 030_Clustering_on_FTS-unique_messages to run K-Means algorithm of the word2vec representation of messages
+ - 040_Visualisation_clusters to explore results, both at first glance and more in depth
+
 ## Sample data
-The sample data can be obtained running the python code *fetch_issues.py* from the root of the repository:
+The sample data can be obtained directly from Panos' framework running the python code *fetch_issues.py* from the root of the repository:
 ```r
 python code/fetch_issues.py
 ```
+
+Also, it is now possible to fetch data directly from Hadoop as shown in the *010* notebook.
 
 ##### Maintainers:
 <sub>Luca Clissa</sub>
