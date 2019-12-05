@@ -9,7 +9,7 @@ notebooks/*.csv
 # Jupyter Notebooks tutorials
 notebooks/*utorial*
 notebooks/.sys.*
-notebooks/ftp_clusters.ipynb #Maria's notebook
+notebooks/ftp_clusters.ipynb
 
 # Swan project
 .swanproject
