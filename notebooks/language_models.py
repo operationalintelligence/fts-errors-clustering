@@ -2,7 +2,7 @@ def tokenizer(dataset, err_col, id_col="msg_id"):
     """Take input message and split it into tokens.
     
     -- params:
-    dataset (pyspark.sql.dataframe.DataFrame): data frame with at least error stringand id columns
+    dataset (pyspark.sql.dataframe.DataFrame): data frame with at least error string and id columns
     err_col (string): name of the error string column
     id_col (string): name of the message id column
     
@@ -53,7 +53,7 @@ def train_w2v(dataset, tks_col="stop_token_1", id_col="msg_id", out_col='message
     """Train Word2Vec model on the input tokens column.
     
     -- params:
-    dataset (pyspark.sql.dataframe.DataFrame): data frame with at least error stringand id columns
+    dataset (pyspark.sql.dataframe.DataFrame): data frame with at least error string and id columns
     tks_col (string): name of the column containing the lists of tokens to feed into the word2vec model
     id_col (string): name of the message id column
     out_col (string): name of the output column for the word2vec vector representation of the messages
@@ -91,7 +91,7 @@ def w2v_preproc(original_data, msg_col, id_col, model_path):
     """Take input dataset as extracted from hdfs and compute Word2Vec representation.
     
     -- params:
-    original_data (pyspark.sql.dataframe.DataFrame): data frame with at least error stringand id columns
+    original_data (pyspark.sql.dataframe.DataFrame): data frame with at least error string and id columns
     msg_col (string): name of the error string column
     id_col (string): name of the message id column
     model_path (string): path where to load pre-trained word2vec model
