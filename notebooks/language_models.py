@@ -98,7 +98,7 @@ def w2v_preproc(original_data, msg_col, id_col, model_path):
     
     Returns:
     original_data (pyspark.ml.feature.Word2VecModel): the original data with an extra 
-                    "message_vector" columnith word2vec embedding
+                    "message_vector" column with word2vec embedding
     """
     original_data = tokenizer(original_data, err_col=msg_col, id_col=id_col)
     w2v_model = load_w2v(model_path)
