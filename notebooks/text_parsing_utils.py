@@ -36,7 +36,7 @@ def split_concatenation_errors(string, split_char="-"):
 def clean_tokens(entry, custom_split=False):
     """Remove punctuation at the end of tokens and discard empty tokens"""
     def flatten(ul):
-        """Take list of tokens after splitting urls and flatten out (i.e. removing sublists of splitted urls)."""
+        """Take list of tokens after splitting concatenation errors and flatten out (i.e. removing sublists of splitted urls)."""
         fl = []
         for i in ul:
             if type(i) is list:
