@@ -15,29 +15,32 @@ Created on Tue Oct  8 10:13:27 2019
 
 @author: Panos Paparrigopoulos
 """
+def void():
+    import urllib.request, json, sys
 
-import urllib.request, json, sys
+    # check arguments for the output filename
+    if len(sys.argv)==1:
+          output_name = "issues.json"
+    elif len(sys.argv)==2:
+          output_name = sys.argv[1]
+    else:
+         raise Exception("More than one argument specified: please provide just the name of the output file.")        
 
-# check arguments for the output filename
-if len(sys.argv)==1:
-      output_name = "issues.json"
-elif len(sys.argv)==2:
-      output_name = sys.argv[1]
-else:
-     raise Exception("More than one argument specified: please provide just the name of the output file.")        
-
-# read issues from Rucio API (all pages)
-res = []
-with urllib.request.urlopen("http://rucio-opint.web.cern.ch/api/issues/") as url:
-    data = json.loads(url.read().decode())
-    res.append(data['results'])
-page=1
-while data['next']:
-    with urllib.request.urlopen("http://rucio-opint.web.cern.ch/api/issues/?page="+str(page)) as url:
+    # read issues from Rucio API (all pages)
+    res = []
+    with urllib.request.urlopen("http://rucio-opint.web.cern.ch/api/issues/") as url:
         data = json.loads(url.read().decode())
-        page += 1
         res.append(data['results'])
-        
-# save results locally
-with open(output_name, 'w') as outfile:
-    json.dump(res, outfile)
+    page=1
+    while data['next']:
+        with urllib.request.urlopen("http://rucio-opint.web.cern.ch/api/issues/?page="+str(page)) as url:
+            data = json.loads(url.read().decode())
+            page += 1
+            res.append(data['results'])
+
+    # save results locally
+    with open(output_name, 'w') as outfile:
+        json.dump(res, outfile)
+
+def ciao(name="Luca"):
+    print(name)
