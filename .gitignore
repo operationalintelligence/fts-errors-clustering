@@ -10,6 +10,8 @@ notebooks/*.csv
 notebooks/*utorial*
 notebooks/.sys.*
 notebooks/ftp_clusters.ipynb
+notebooks/external/*
+notebooks/Untitled*
 
 # Swan project
 .swanproject
