@@ -1,5 +1,21 @@
 def stats_summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs_tks_out="abstract_message",
             abs_tks_in="tokens_cleaned", abstract=True):
+    """Compute frequencies of unique messages aggregated per cluster.
+    
+    -- params:
+    dataset (pyspark.sql.dataframe.DataFrame): data frame with tokens lists and cluster prediction columns
+    clust_col (string): name of the cluster prediction column
+    tks_col (string): name of the tokens lists column
+    abs_tks_in (string): name of the column with tokens to be abstracted if abstract is True
+    abs_tks_out (string): name of the output column for abstract tokens if abstract is True
+    abstract (bool): whether to consider abstract tokens when selecting unique messages
+    
+    Returns:
+    stats_summary (pandas.DataFrame): data frame with:
+                                    "n_messages" --> number of messages per cluster
+                                    "unique_strings" --> number of unique messages per cluster
+                                    "unique_patterns" (if abstract==True) --> number of unique abstract messages per cluster
+    """
     import pyspark.sql.functions as F
     
     grouped_stats = dataset.groupBy(clust_col)
@@ -18,6 +34,32 @@ def stats_summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs_t
 def pattern_summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs_tks_out="abstract_tokens",
                     abs_tks_in="tokens_cleaned", abstract=True, n_mess=3, original=None, n_src=3, n_dst=3, 
                     src_col=None, dst_col=None):
+    """Compute top n_mess messages aggregated per cluster.
+    
+    -- params:
+    dataset (pyspark.sql.dataframe.DataFrame): data frame with tokens lists and cluster prediction columns
+    clust_col (string): name of the cluster prediction column
+    tks_col (string): name of the tokens lists column
+    abs_tks_in (string): name of the column with tokens to be abstracted if abstract is True
+    abs_tks_out (string): name of the output column for abstract tokens if abstract is True
+    abstract (bool): whether to consider abstract tokens when selecting unique messages
+    n_mess (int): number of most frequent patterns to retain
+    original (pyspark.sql.dataframe.DataFrame): data frame with hdfs data for enriched summary.
+                                                Default None (no additional information is showed)
+    n_src (int): number of most frequent source sites to retain  -- Default None (TO DO)
+    n_src (int): number of most frequent destination sites to retain  -- Default None (TO DO)
+    src_col (string): name of the source site column in the original data frame  -- Default None (TO DO)
+    dst_col (string): name of the destination site column in the original data frame  -- Default None (TO DO)
+    
+    Returns:
+    patterns_summary (pandas.DataFrame): data frame with:
+                                    "top_{n_mess}" --> dictionary with top n_mess patterns per cluster 
+                                            (Keys are ["msg": contains the pattern, "n": relative frequency in the cluster] 
+                                    "top_{n_src}" --> dictionary with top n_src source sites per cluster 
+                                            (Keys are ["src": contains the source, "n": relative frequency in the cluster] 
+                                    "top_{n_dst}" --> dictionary with top n_mess per cluster 
+                                            (Keys are ["dst": contains the destination, "n": relative frequency in the cluster] 
+    """
     import pandas as pd
     import pyspark.sql.functions as F
     from pyspark.sql.window import Window
@@ -83,8 +125,32 @@ def pattern_summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs
 
     
 def summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs_tks_out="abstract_message",
-            abs_tks_in="tokens_cleaned", abstract=True, n_mess=3, wrdcld=False, original=None, n_src=3, n_dst=3,
-            data_id="msg_id", orig_id="msg_id", src_col=None, dst_col=None):
+            abs_tks_in="tokens_cleaned", abstract=True, n_mess=3, wrdcld=False,  #stats_summary
+            original=None, n_src=3, n_dst=3, src_col=None, dst_col=None, data_id="msg_id", orig_id="msg_id", #patterns_summary
+           ):
+    """Return summary statistics aggregated per cluster.
+    
+    -- params:
+    dataset (pyspark.sql.dataframe.DataFrame): data frame with tokens lists and cluster prediction columns
+    clust_col (string): name of the cluster prediction column
+    tks_col (string): name of the tokens lists column
+    abs_tks_in (string): name of the column with tokens to be abstracted if abstract is True
+    abs_tks_out (string): name of the output column for abstract tokens if abstract is True
+    abstract (bool): whether to consider abstract tokens when selecting unique messages
+    n_mess (int): number of most frequent patterns to retain
+    wrdcld (bool): whether to produce word cloud fr visualization of clusters content    
+    original (pyspark.sql.dataframe.DataFrame): data frame with hdfs data for enriched summary.
+                                                Default None (no additional information is showed)
+    n_src (int): number of most frequent source sites to retain  -- Default None (TO DO)
+    n_src (int): number of most frequent destination sites to retain  -- Default None (TO DO)
+    src_col (string): name of the source site column in the original data frame  -- Default None (TO DO)
+    dst_col (string): name of the destination site column in the original data frame  -- Default None (TO DO)
+    data_id (string): name of the message id column in the dataset data frame
+    orig_id (string): name of the message id column in the original data frame
+
+    Returns:
+    summary_df (pandas.DataFrame): merged data frame with stats_summary and patterns_summary
+    """
     import pandas as pd
     from abstraction_utils import abstract_params
     
@@ -115,6 +181,21 @@ def summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs_tks_out
 
 def tokens_cloud(dataset, msg_col, clust_col="prediction", save_path=None,
                 figsize=(8,4), width=800, height=400, bkg_col="white", min_font_size=11):
+    """Return summary statistics aggregated per cluster.
+    
+    -- params:
+    dataset (pyspark.sql.dataframe.DataFrame): data frame with tokens lists and cluster prediction columns
+    msg_col (string): name of the tokens lists column
+    clust_col (string): name of the cluster prediction column
+    save_path (string): where to save output figures. Defaule None (no saving)
+    figsize (tuple(int, int)): figure size
+    width (int): width of word clouds
+    height (int): height of word clouds
+    bkg_col (string): background color of word clouds
+    min_font_size (int): fontsize for the least commond tokens
+
+    Returns: None
+    """
     import wordcloud as wrdcld
     import matplotlib
     import pyspark.sql.functions as F
