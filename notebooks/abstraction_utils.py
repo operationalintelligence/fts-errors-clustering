@@ -1,9 +1,11 @@
 def is_url(string):
+    """Check whether input string is an url."""
     if string.find("://") != -1:
         return(True)
     return(False)
 
 def is_ipv6(string):
+    """Check whether input string is an ipv6."""
     import numpy as np
     is_column = [1 if x==":" else 0 for x in string]
     if np.sum(is_column) >= 3 and string.find("/") == -1:
@@ -11,6 +13,7 @@ def is_ipv6(string):
     return(False)
 
 def is_address(string):
+    """Check whether input string is an address."""
     import numpy as np
     is_point = [1 if x=="." else 0 for x in string]
     if np.sum(is_point) >= 2 and string.find("/") == -1:
@@ -18,21 +21,25 @@ def is_address(string):
     return(False)
 
 def is_path(string):
+    """Check whether input string is a path."""
     if string.startswith("path="):
         return(True)
     return(False)
 
 def is_file_path(string):
+    """Check whether input string is a file path."""
     if string.startswith("/") and all(char in string[1:] for char in [".", "/"]):
         return(True)
     return(False)
 
 def is_net_param(string):
+    """Check whether input string is a network parameter."""
     if string.startswith("[net="):
         return(True)
     return(False)
 
 def is_filesize_mismatch(string):
+    """Check whether input string is a mismatch in file size."""
     if string.startswith("(expected="):
         res = "\$EXPECTED_SIZE"
     elif string.startswith("actual="):
@@ -42,6 +49,7 @@ def is_filesize_mismatch(string):
     return(res)
 
 def is_remote_entity(string):
+    """Check whether input string is a remote entity."""
     if string.startswith("(/cn="):
         res = "\$EXPECTED_REMOTE_ENTITY"
     elif string.startswith("(/dc="):
@@ -51,6 +59,9 @@ def is_remote_entity(string):
     return(res)
     
 def replace_params(string, replace_string=None):
+    """Return inptu string after abstracting url, ipv6, address, path, filepath,
+        network parameters, filesize mismatch and remote entity.
+    """
     if not replace_string:
         if is_url(string):
             string = "\$URL"
@@ -74,6 +85,7 @@ def replace_params(string, replace_string=None):
     return(string)
 
 def replace_IDS(tokens_list, ID_precursors=["transaction", "process", "message", "relation", "database", "tuple"]):
+    """Replace actual ids for ID_precursors entities with "$ID.""""
     import re
     msg_pattern = re.compile("<[0-9]+:[0-9]+>")
     precursor_flags = [False]*len(ID_precursors)
@@ -97,12 +109,23 @@ def replace_IDS(tokens_list, ID_precursors=["transaction", "process", "message",
     return(res)
 
 def abstract_message(tokens_list):
-    '''Take a string and split url into netloc + path'''
+    '''Return input tokens list afterabstracting parameters'''
     tks = [replace_params(x) for x in tokens_list]
     tks = replace_IDS(tks)
     return(tks)
 
 def abstract_params(dataset, tks_col="tokens_cleaned", out_col="abstract_message"):
+    """Abstract parameters from a column of tokens lists.
+    
+    -- params:
+    dataset (pyspark.sql.dataframe.DataFrame): data frame with at least a column containg lists of tokens
+    tks_col (string): name of the tokens lists column
+    out_col (string): name of the column where to store abstracted tokens
+    
+    Returns:
+    dataset (pyspark.sql.dataframe.DataFrame): the input dataset with an extra 
+                    out_col column with abstracted tokens
+    """
     from pyspark.sql.functions import udf
     from pyspark.sql.types import StringType, ArrayType
     
