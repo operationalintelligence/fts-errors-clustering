@@ -85,7 +85,7 @@ def replace_params(string, replace_string=None):
     return(string)
 
 def replace_IDS(tokens_list, ID_precursors=["transaction", "process", "message", "relation", "database", "tuple"]):
-    """Replace actual ids for ID_precursors entities with "$ID.""""
+    """Replace actual ids for ID_precursors entities with "$ID."""
     import re
     msg_pattern = re.compile("<[0-9]+:[0-9]+>")
     precursor_flags = [False]*len(ID_precursors)

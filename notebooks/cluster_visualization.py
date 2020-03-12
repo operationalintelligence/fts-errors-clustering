@@ -47,7 +47,7 @@ def pattern_summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs
     original (pyspark.sql.dataframe.DataFrame): data frame with hdfs data for enriched summary.
                                                 Default None (no additional information is showed)
     n_src (int): number of most frequent source sites to retain  -- Default None (TO DO)
-    n_src (int): number of most frequent destination sites to retain  -- Default None (TO DO)
+    n_dst (int): number of most frequent destination sites to retain  -- Default None (TO DO)
     src_col (string): name of the source site column in the original data frame  -- Default None (TO DO)
     dst_col (string): name of the destination site column in the original data frame  -- Default None (TO DO)
     
@@ -81,14 +81,14 @@ def pattern_summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs
     window_pattern = Window.partitionBy(clust_col).orderBy(F.col(msg_col[1]).desc(),
                                                    F.col(msg_col[0]))
     if original:
-        grouped_patterns_src = dataset.groupBy(clust_col, msg_col[0], src_col).agg(F.count("*").alias("src_sites")
+        grouped_patterns_src = dataset.groupBy(clust_col, src_col).agg(F.count("*").alias("src_sites")
                                 ).orderBy(clust_col, "src_sites", ascending=[True, False])
-        grouped_patterns_dst = dataset.groupBy(clust_col, msg_col[0], dst_col).agg(F.count("*").alias("dst_sites")
+        grouped_patterns_dst = dataset.groupBy(clust_col, dst_col).agg(F.count("*").alias("dst_sites")
                                 ).orderBy(clust_col, "dst_sites", ascending=[True, False])
         window_src = Window.partitionBy(clust_col).orderBy(F.col("src_sites").desc(),
-                                                       F.col(msg_col[0]), F.col(src_col))
+                                                       F.col(src_col))
         window_dst = Window.partitionBy(clust_col).orderBy(F.col("dst_sites").desc(),
-                                                       F.col(msg_col[0]), F.col(dst_col))
+                                                       F.col(dst_col))
         grouped_patterns = grouped_patterns.select('*', F.rank().over(window_pattern).alias('rank_pattern')
                                                   ).filter(F.col('rank_pattern') <= n_mess)
         grouped_patterns_src = grouped_patterns_src.select('*', F.rank().over(window_src).alias('rank_src')
@@ -96,22 +96,26 @@ def pattern_summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs
         grouped_patterns_dst = grouped_patterns_dst.select('*', F.rank().over(window_dst).alias('rank_dst')
                                                   ).filter(F.col('rank_dst') <= n_dst)
         
-        return(grouped_patterns, grouped_patterns_src, grouped_patterns_dst)
+        
+#         columns = [F.col(col_name) for col_name in grouped_patterns]
+#         grouped_patterns = grouped_patterns.join(grouped_patterns_src,
+#                                                  grouped_patterns[clust_col]==grouped_patterns_src[clust_col], 
+#                                                  how="outer").select()
+#         grouped_patterns = grouped_patterns.join(grouped_patterns_dst,
+#                                                  grouped_patterns[clust_col]==grouped_patterns_dst[clust_col], 
+#                                                  how="outer").select(grouped_patterns[clust_col])
+#         return(grouped_patterns)#, grouped_patterns_src, grouped_patterns_dst)
 
     else:
         grouped_patterns = grouped_patterns.select('*', F.rank().over(window_pattern).alias('rank_pattern')) \
         .filter(F.col('rank_pattern') <= n_mess) 
     
-    # take top N patterns for each cluster/pattern group
+    # take top n_mess patterns for each cluster/pattern group
     col_out = []
     clust_labels = []
     for clust_id in grouped_patterns.select(clust_col).distinct().collect():
-        if original:
-            temp = grouped_patterns.filter(F.col(clust_col)==clust_id[clust_col]).select(
-                msg_col[0], msg_col[1], src_col, dst_col).collect()
-        else:
-            temp = grouped_patterns.filter(F.col(clust_col)==clust_id[clust_col]).select(
-                msg_col[0], msg_col[1]).collect()
+        temp = grouped_patterns.filter(F.col(clust_col)==clust_id[clust_col]).select(
+            msg_col[0], msg_col[1]).collect()
 
         row_out = []
         for row in temp:
@@ -120,8 +124,46 @@ def pattern_summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs
         clust_labels.append(clust_id[clust_col])
         col_out.append(row_out)
     
-    patterns_summary = pd.DataFrame({"top_3": col_out}, index=clust_labels)
-    return(patterns_summary)
+    patterns_summary = pd.DataFrame({"top_{}_msg".format(n_mess): col_out}, index=clust_labels)
+
+    if original:
+        # take top n_src source sites for each cluster/src_site group
+        col_out = []
+        clust_labels = []
+        for clust_id in grouped_patterns_src.select(clust_col).distinct().collect():
+            temp = grouped_patterns_src.filter(F.col(clust_col)==clust_id[clust_col]).select(
+                src_col, "src_sites").collect()
+
+            row_out = []
+            for row in temp:
+                row_out.append({"src": row[src_col],
+                                "n": row["src_sites"]})
+            clust_labels.append(clust_id[clust_col])
+            col_out.append(row_out)
+
+        src_summary = pd.DataFrame({"top_{}_src".format(n_src): col_out}, index=clust_labels)
+
+        # take top n_dst destination sites for each cluster/dst_site group
+        col_out = []
+        clust_labels = []
+        for clust_id in grouped_patterns_dst.select(clust_col).distinct().collect():
+            temp = grouped_patterns_dst.filter(F.col(clust_col)==clust_id[clust_col]).select(
+                dst_col, "dst_sites").collect()
+
+            row_out = []
+            for row in temp:
+                row_out.append({"dst": row[dst_col],
+                                "n": row["dst_sites"]})
+            clust_labels.append(clust_id[clust_col])
+            col_out.append(row_out)
+
+        dst_summary = pd.DataFrame({"top_{}_dst".format(n_dst): col_out}, index=clust_labels)
+            
+        patterns_summary = pd.merge(patterns_summary, src_summary, how='outer',
+                    left_index=True, right_index=True)
+        patterns_summary = pd.merge(patterns_summary, dst_summary, how='outer',
+                    left_index=True, right_index=True)        
+    return(patterns_summary)#, src_summary, dst_summary)
 
     
 def summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs_tks_out="abstract_message",
@@ -168,7 +210,7 @@ def summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs_tks_out
     # second extract top N most frequent patterns
     patterns = pattern_summary(dataset, clust_col=clust_col, tks_col=tks_col, abs_tks_out=abs_tks_out,
                                abs_tks_in=abs_tks_in, abstract=abstract, n_mess=n_mess, original=original, 
-                               n_src=3, n_dst=3, src_col=src_col, dst_col=dst_col)
+                               n_src=n_src, n_dst=n_dst, src_col=src_col, dst_col=dst_col)
         
     # finally combine the stats and patterns summary
     summary_df = pd.merge(stats, patterns, how='outer',

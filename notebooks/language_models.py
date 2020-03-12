@@ -58,7 +58,7 @@ def train_w2v(dataset, tks_col="stop_token_1", id_col="msg_id", out_col='message
     id_col (string): name of the message id column
     out_col (string): name of the output column for the word2vec vector representation of the messages
     vec_size (int): dimension of the word2vec embedded space
-    min_count (int): minimum frequenc for tokens to be considered in the training
+    min_count (int): minimum frequency for tokens to be considered in the training
     save_path (string): path where to save the trained model. Default is None (no saving)
     mode ("new" or "overwrite"): whether to save new file or overwrite pre-existing one.
     
