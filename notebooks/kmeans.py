@@ -45,7 +45,7 @@ def load_kmeans(save_path):
     return(model)
     
 def K_optim(k_list, dataset, tks_vec="message_vector", ft_col="features", distance="cosine", 
-            initSteps=10, tol=0.0001, maxIter=30):
+            initSteps=10, tol=0.0001, maxIter=30, log_path=None):
     """Train K-Means model for different K values.
     
     -- params:
@@ -57,7 +57,8 @@ def K_optim(k_list, dataset, tks_vec="message_vector", ft_col="features", distan
     initStep (int): number of different random intializations for the kmeans algorithm
     tol (int): tolerance for kmeans algorithm convergence
     maxIter (int): maximum number of iterations for the kmeans algorithm
-
+    log_path (string): where to save optimization stats. Default None (no saving)
+    
     Returns:
     res (dict): dictionary with grid of trained models and evaluation metrics. Keys:{"model", "wsse", "silhouette"}
     """
@@ -79,7 +80,6 @@ def K_optim(k_list, dataset, tks_vec="message_vector", ft_col="features", distan
             
         start_time = time.time()
         start_time_string = datetime.datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')
-        print("Started at: {}\n".format(start_time_string))
 
         clustering_model.append(train_kmeans(dataset, ft_col=ft_col, k=k, distance="cosine",
                                              initSteps=initSteps, tol=tol, maxIter=maxIter))
@@ -87,13 +87,27 @@ def K_optim(k_list, dataset, tks_vec="message_vector", ft_col="features", distan
         # compute metrics   
         wsse.append(clustering_model[i].summary.trainingCost)
         silhouette.append(evaluator.evaluate(clustering_model[i].summary.predictions))
+        
+        if log_path:
+            with open(log_path, "a") as log:
+                log.write("With K={}\n".format(k))
+                log.write("Started at: {}\n".format(start_time_string))
+                log.write("Within Cluster Sum of Squared Errors = " + str(round(wsse[i],4)))
+                log.write("\nSilhouette with cosine distance = " + str(round(silhouette[i],4)))
 
-        print("With K={}".format(k))
-        print("Within Cluster Sum of Squared Errors = " + str(round(wsse[i],4)))
-        print("Silhouette with cosine distance = " + str(round(silhouette[i],4)))
+                log.write("\nTime elapsed: {} minutes and {} seconds.".format(int((time.time() - start_time)/60), 
+                                                                          int((time.time() - start_time)%60)))
+                log.write('--'*30 + "\n\n")
+        else:
+            print("With K={}\n".format(k))
+            print("Started at: {}\n".format(start_time_string))
+            print("Within Cluster Sum of Squared Errors = " + str(round(wsse[i],4)))
+            print("Silhouette with cosine distance = " + str(round(silhouette[i],4)))
 
-        print("\nTime elapsed: {} minutes and {} seconds.".format(int((time.time() - start_time)/60), int((time.time() - start_time)%60)))
-        print('--'*30)
+            print("\nTime elapsed: {} minutes and {} seconds.".format(int((time.time() - start_time)/60), 
+                                                                      int((time.time() - start_time)%60)))
+            print('--'*30)
+            
     res = {"model": clustering_model, "wsse": wsse, "silhouette": silhouette}
     return(res)
 
