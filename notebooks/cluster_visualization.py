@@ -160,12 +160,13 @@ def pattern_summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs
             col_out.append(row_out)
 
         dst_summary = pd.DataFrame({"top_{}_dst".format(n_dst): col_out}, index=clust_labels)
-            
+
+        # merge summary data frames
         patterns_summary = pd.merge(patterns_summary, src_summary, how='outer',
                     left_index=True, right_index=True)
         patterns_summary = pd.merge(patterns_summary, dst_summary, how='outer',
                     left_index=True, right_index=True)        
-    return(patterns_summary)#, src_summary, dst_summary)
+    return(patterns_summary)
 
     
 def summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs_tks_out="abstract_message",
@@ -218,10 +219,21 @@ def summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs_tks_out
     summary_df = pd.merge(stats, patterns, how='outer',
                     left_on=clust_col, right_on=patterns.index).set_index(clust_col)
     
+    # Add percentage stat in top patterns/src/dst columns
+    for idx in summary_df.index:
+        tot_clust = summary_df.loc[idx].n_messages
+        cols = [col for col in summary_df.columns if "top" in col]
+        for col in  cols:
+            output = []
+            for top_enties in summary_df[col].loc[idx]:
+                top_enties["n_perc"] = round(top_enties["n"]/tot_clust, 4)
+                output.append(top_enties)
+            summary_df[col].loc[idx] = output
+    
+    # tokens cloud
     if wrdcld:
         tokens_cloud(dataset, msg_col=abs_tks_out, clust_col=clust_col)
     return(dataset, summary_df)
-#     return(patterns[0],patterns[1], patterns[2])
 
 def tokens_cloud(dataset, msg_col, clust_col="prediction", save_path=None,
                 figsize=(8,4), width=800, height=400, bkg_col="white", min_font_size=11):
