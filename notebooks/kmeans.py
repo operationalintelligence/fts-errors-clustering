@@ -65,6 +65,7 @@ def K_optim(k_list, dataset, tks_vec="message_vector", ft_col="features", distan
     import time
     import datetime
     from pyspark.ml.evaluation import ClusteringEvaluator
+    from pathlib import Path
     
     dataset = kmeans_preproc(dataset, tks_vec)
     
@@ -89,15 +90,17 @@ def K_optim(k_list, dataset, tks_vec="message_vector", ft_col="features", distan
         silhouette.append(evaluator.evaluate(clustering_model[i].summary.predictions))
         
         if log_path:
+            log_path = Path(log_path)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
             with open(log_path, "a") as log:
-                log.write("With K={}\n".format(k))
+                log.write("With K={}\n\n".format(k))
                 log.write("Started at: {}\n".format(start_time_string))
                 log.write("Within Cluster Sum of Squared Errors = " + str(round(wsse[i],4)))
                 log.write("\nSilhouette with cosine distance = " + str(round(silhouette[i],4)))
 
                 log.write("\nTime elapsed: {} minutes and {} seconds.".format(int((time.time() - start_time)/60), 
                                                                           int((time.time() - start_time)%60)))
-                log.write('--'*30 + "\n\n")
+                log.write('\n--'*30 + "\n\n")
         else:
             print("With K={}\n".format(k))
             print("Started at: {}\n".format(start_time_string))
