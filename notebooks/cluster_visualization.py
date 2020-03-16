@@ -23,11 +23,13 @@ def stats_summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs_t
         stats_summary = grouped_stats.agg(F.count(tks_col).alias("n_messages"),
                                    F.countDistinct(tks_col).alias("unique_strings"),
                                    F.countDistinct(abs_tks_out).alias("unique_patterns"),
-                                   ).orderBy("unique_patterns", ascending=False)
+                                   ).orderBy("n_messages", ascending=False)
+#                                    ).orderBy("unique_patterns", ascending=False)
     else:
         stats_summary = grouped_stats.agg(F.count(tks_col).alias("n_messages"),
                                    F.countDistinct(tks_col).alias("unique_strings"),
-                                   ).orderBy("unique_strings", ascending=False)
+                                   ).orderBy("n_messages", ascending=False)
+#                                    ).orderBy("unique_strings", ascending=False)
         
     return(stats_summary.toPandas())
 
