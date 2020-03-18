@@ -169,14 +169,16 @@ def pattern_summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs
     return(patterns_summary)
 
     
-def summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs_tks_out="abstract_message",
+def summary(dataset, k=None, clust_col="prediction", tks_col="stop_token_1", abs_tks_out="abstract_message",
             abs_tks_in="tokens_cleaned", abstract=True, n_mess=3, wrdcld=False,  #stats_summary
             original=None, n_src=3, n_dst=3, src_col=None, dst_col=None, data_id="msg_id", orig_id="msg_id", #patterns_summary
+            save_path=None, timeplot=False, time_col=None,
            ):
     """Return summary statistics aggregated per cluster.
     
     -- params:
     dataset (pyspark.sql.dataframe.DataFrame): data frame with tokens lists and cluster prediction columns
+    k (int): number of clusters. If specified the executing time decreases. Default None
     clust_col (string): name of the cluster prediction column
     tks_col (string): name of the tokens lists column
     abs_tks_in (string): name of the column with tokens to be abstracted if abstract is True
@@ -192,20 +194,33 @@ def summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs_tks_out
     dst_col (string): name of the destination site column in the original data frame  -- Default None (TO DO)
     data_id (string): name of the message id column in the dataset data frame
     orig_id (string): name of the message id column in the original data frame
+    save_path (string): base folder path where to store outputs
+    timeplot (bool): whether to plot errors time trend
+    time_col (string): name of the unix time in milliseconds
 
     Returns:
     summary_df (pandas.DataFrame): merged data frame with stats_summary and patterns_summary
     """
     import pandas as pd
     from abstraction_utils import abstract_params
+    from pathlib import Path
     
         # compute quantitative stats of the clusters
     if abstract:
         dataset = abstract_params(dataset, tks_col=abs_tks_in, out_col=abs_tks_out)
         
     if original:
+        or_cols = original.columns
+        data_cols = [dataset[col] for col in dataset.columns if col not in or_cols]
+
+        out_cols = [original[col] for col in or_cols]
+        out_cols.extend(data_cols)
+        
         dataset = original.join(dataset, original[orig_id]==dataset[data_id], 
-                             how="outer")#.select(output_columns)
+                             how="outer").select(out_cols)
+        dataset = convert_endpoint_to_site(dataset, "src_hostname", "dst_hostname")
+    if timeplot:
+        plot_time(dataset, time_col=time_col, clust_col=clust_col, k=k, save_path="{}/timeplot".format(save_path))
     # first compute quantitative stats of the clusters
     stats = stats_summary(dataset, clust_col=clust_col, tks_col=tks_col, abs_tks_out=abs_tks_out,
             abs_tks_in=abs_tks_in, abstract=abstract)
@@ -219,6 +234,7 @@ def summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs_tks_out
     summary_df = pd.merge(stats, patterns, how='outer',
                     left_on=clust_col, right_on=patterns.index).set_index(clust_col)
     
+    
     # Add percentage stat in top patterns/src/dst columns
     for idx in summary_df.index:
         tot_clust = summary_df.loc[idx].n_messages
@@ -229,10 +245,16 @@ def summary(dataset, clust_col="prediction", tks_col="stop_token_1", abs_tks_out
                 top_enties["n_perc"] = round(top_enties["n"]/tot_clust, 4)
                 output.append(top_enties)
             summary_df[col].loc[idx] = output
-    
+
+    if save_path:
+        save_path = Path(save_path)
+        save_path.mkdir(parents=True, exist_ok=True)
+        outname = save_path / "summary.csv"#.format(clust_id[clust_col])
+        summary_df.to_csv(outname, index_label=clust_col)    
+
     # tokens cloud
     if wrdcld:
-        tokens_cloud(dataset, msg_col=abs_tks_out, clust_col=clust_col)
+        tokens_cloud(dataset, msg_col=abs_tks_out, clust_col=clust_col, save_path="{}/token_clouds".format(save_path))
     return(dataset, summary_df)
 
 def tokens_cloud(dataset, msg_col, clust_col="prediction", save_path=None,
@@ -252,6 +274,7 @@ def tokens_cloud(dataset, msg_col, clust_col="prediction", save_path=None,
 
     Returns: None
     """
+    import os
     import wordcloud as wrdcld
     import matplotlib
     import pyspark.sql.functions as F
@@ -277,4 +300,118 @@ def tokens_cloud(dataset, msg_col, clust_col="prediction", save_path=None,
         plt.axis("off")
         plt.show()
         if save_path:
-            fig.savefig("{}/Cluster{}.png".format(save_path, clust_id[clust_col]), format='png', bbox_inches='tight')
+            save_path = Path(save_path)
+            save_path.mkdir(parents=True, exist_ok=True)
+            outname = save_path / "cluster_{}.png".format(clust_id[clust_col])
+            if os.path.isfile(outname):
+                os.remove(outname)
+            fig.savefig(outname, format='png', bbox_inches='tight')
+
+def get_hostname(endpoint):
+    """
+    Extract hostname from the endpoint.
+    Returns empty string if failed to extract.
+
+    :return: hostname value
+    """
+    import re
+    p = r'^(.*?://)?(?P<host>[\w.-]+).*'
+    r = re.search(p, endpoint)
+
+    return r.group('host') if r else ''
+
+def convert_endpoint_to_site(dataset, src_col, dst_col):
+    """
+    Convert src/dst hostname to the respective site names.
+
+    :return: dataset
+    """
+    import requests#, re
+    from pyspark.sql.functions import col, create_map, lit
+    from itertools import chain
+    
+    # retrieve mapping
+    cric_url = "http://wlcg-cric.cern.ch/api/core/service/query/?json&type=SE"
+    r = requests.get(url=cric_url).json()
+    site_protocols = {}
+    for site, info in r.items():
+        for se in info:
+            for name, prot in se.get('protocols', {}).items():
+                site_protocols.setdefault(get_hostname(prot['endpoint']), site)
+                
+    # apply mapping
+    mapping_expr = create_map([lit(x) for x in chain(*site_protocols.items())])
+    out_cols = dataset.columns
+    dataset = dataset.withColumnRenamed(src_col, "src")
+    dataset = dataset.withColumnRenamed(dst_col, "dst")
+    dataset = dataset.withColumn(src_col, mapping_expr[dataset["src"]])\
+             .withColumn(dst_col, mapping_expr[dataset["dst"]])
+    return(dataset.select(out_cols))
+
+def plot_time(dataset, time_col, clust_col="prediction", k=None, save_path=None):
+    """ Plot the trend of error messages over time (per each cluster).
+    
+    -- params:
+    dataset (pyspark.sql.dataframe.DataFrame): data frame with predictions and message times
+    time_col (string): name of the unix time in milliseconds
+    clust_col (string): name of the cluster prediction column
+    k (int): number of clusters. If specified the executing time decreases. Default None
+    save_path (string): where to save output figures. Default None (no saving)
+
+    Returns: None
+    """
+    import pyspark.sql.functions as F
+    import os
+    import datetime
+    from pathlib import Path
+    from matplotlib import pyplot as plt
+    import matplotlib.dates as mdates
+    import matplotlib.units as munits
+    
+    dataset = (dataset.filter(F.col(time_col)>0) # ignore null values
+            .withColumn("datetime_str", F.from_unixtime(F.col('timestamp_tr_comp')/1000)) # datetime (string)
+            .withColumn("datetime", F.to_timestamp(F.col('datetime_str'), 'yyyy-MM-dd HH:mm'))  # datetime (numeric)
+            .select(clust_col, "datetime"))
+    if k:
+        clust_ids = [{"prediction": i} for i in range(0,k)]
+    else:
+        clust_ids = dataset.select(clust_col).distinct().collect()
+    
+    for clust_id in clust_ids:
+        cluster = dataset.filter(F.col(clust_col)==clust_id[clust_col]).select("datetime")
+#         cluster = cluster.groupBy("datetime").agg(F.count("datetime").alias("freq")).orderBy("datetime", ascending=True)
+        cluster = cluster.toPandas()
+        
+        try:
+            res_sort = cluster.datetime.value_counts(bins=24*6).sort_index()
+        except ValueError:
+            print("""WARNING: time column completely empty. Errors time trend 
+                  cannot be displayed for cluster {}""".format(clust_id[clust_col]))
+            continue
+
+        x_datetime = [interval.right for interval in res_sort.index]
+        
+        converter = mdates.ConciseDateConverter()
+        munits.registry[datetime.datetime] = converter
+
+        fig, ax = plt.subplots(figsize=(10,5))
+#         ax.plot(res_sort.index, res_sort)
+        ax.plot(x_datetime, res_sort.values)
+        min_h = min(x_datetime) #res_sort.index.min()
+        max_h = max(x_datetime) #res_sort.index.max()
+        day_min = str(min_h)[:10]
+        day_max = str(max_h)[:10]
+#         title = f"{'Cluster {} - init:'.format(3):>25}{day_min:>15}{str(min_h)[11:]:>12}" + \
+#                  f"\n{'          - end:':>25}{day_max:>15}{str(max_h)[11:]:>12}"
+        title = "Cluster {} - day: {}".format(clust_id[clust_col], day_min)
+        plt.title(title)
+        
+        if save_path:
+            save_path = Path(save_path)
+            save_path.mkdir(parents=True, exist_ok=True)
+            outname = save_path / "cluster_{}.png".format(clust_id[clust_col])
+            if os.path.isfile(outname):
+                os.remove(outname)
+            fig.savefig(outname, format='png', bbox_inches='tight')
+        else:
+            plt.show()
