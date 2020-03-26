@@ -8,7 +8,7 @@ def kmeans_preproc(dataset, tks_vec):
     
 
 def train_kmeans(dataset, k, ft_col='features', distance="cosine", initSteps=10,
-                 tol=0.0001, maxIter=30, save_path=None, mode="new"):
+                 tol=0.0001, maxIter=30, save_path=None, mode="new", log_path=None):
     """Train K-Means model.
     
     -- params:
@@ -20,23 +20,60 @@ def train_kmeans(dataset, k, ft_col='features', distance="cosine", initSteps=10,
     maxIter (int): maximum number of iterations for the kmeans algorithm
     save_path (string): where to save trained kmeans model
     mode ("new" or "overwrite"): whether to save new file or overwrite pre-existing one.
+    log_path (string): where to save optimization stats. Default None (no saving)
 
     Returns:
     model_fit (pyspark.ml.clustering.KMeansModel): trained K-Means model
     """
+    from pyspark.ml.evaluation import ClusteringEvaluator
     from pyspark.ml.clustering import KMeans
+    from pathlib import Path
+    import time
+    import datetime
+    
+    evaluator = ClusteringEvaluator(distanceMeasure=distance)
+    
+    start_time = time.time()
+    start_time_string = datetime.datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')   
     
     model = KMeans(featuresCol=ft_col,k=k, initMode='k-means||',
                    initSteps=initSteps, tol=tol, maxIter=maxIter, distanceMeasure=distance)
+    
     model_fit = model.fit(dataset)
     
-    if save_path:
-        if mode=="overwrite":
-            model_fit.write().overwrite().save(save_path)
-        else:
-            model_fit.save(save_path)
+    wsse = model_fit.summary.trainingCost
+    silhouette = evaluator.evaluate(model_fit.summary.predictions)
+    
+    if log_path:
+        log_path = Path(log_path)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "a") as log:
+            log.write("With K={}\n\n".format(k))
+            log.write("Started at: {}\n".format(start_time_string))
+            log.write("Within Cluster Sum of Squared Errors = " + str(round(wsse,4)))
+            log.write("\nSilhouette with cosine distance = " + str(round(silhouette,4)))
 
-    return(model_fit)
+            log.write("\nTime elapsed: {} minutes and {} seconds.\n".format(int((time.time() - start_time)/60), 
+                                                                      int((time.time() - start_time)%60)))
+            log.write('--'*30 + "\n\n")
+    else:
+        print("With K={}\n".format(k))
+        print("Started at: {}\n".format(start_time_string))
+        print("Within Cluster Sum of Squared Errors = " + str(round(wsse,4)))
+        print("Silhouette with cosine distance = " + str(round(silhouette,4)))
+
+        print("\nTime elapsed: {} minutes and {} seconds.".format(int((time.time() - start_time)/60), 
+                                                                  int((time.time() - start_time)%60)))
+        print('--'*30)
+    
+    if save_path:
+        outname = "{}/kmeans_K={}".format(save_path, k)
+        if mode=="overwrite":
+            model.write().overwrite().save(outname)
+        else:
+            model.save(outname)
+
+    return{"model": model_fit, "wsse": wsse, "asw": silhouette}
 
 def load_kmeans(save_path):
     """Load K-Means model from save_path."""
@@ -44,8 +81,25 @@ def load_kmeans(save_path):
     model = KMeansModel.load(save_path)
     return(model)
     
+    
+def compute_metrics(model_list, index, metric, distance):
+    from pyspark.ml.evaluation import ClusteringEvaluator
+
+    # Evaluate clustering by computing Silhouette score
+    evaluator = ClusteringEvaluator(distanceMeasure=distance)
+    
+    if metric=="wsse":
+        res = model_list[i].summary.trainingCost
+    elif metric=="asw":
+        res = evaluator.evaluate(model_list[i].summary.predictions)
+    else:
+        print("WARNING: wrong metric specified. Use either \"wsse\" or \"asw\".")
+        return(None)
+    return(res)
+    
+    
 def K_optim(k_list, dataset, tks_vec="message_vector", ft_col="features", distance="cosine", 
-            initSteps=10, tol=0.0001, maxIter=30, log_path=None):
+            initSteps=10, tol=0.0001, maxIter=30, n_cores=8, log_path=None):
     """Train K-Means model for different K values.
     
     -- params:
@@ -57,6 +111,7 @@ def K_optim(k_list, dataset, tks_vec="message_vector", ft_col="features", distan
     initStep (int): number of different random intializations for the kmeans algorithm
     tol (int): tolerance for kmeans algorithm convergence
     maxIter (int): maximum number of iterations for the kmeans algorithm
+    n_cores (int): number of cores to use
     log_path (string): where to save optimization stats. Default None (no saving)
     
     Returns:
@@ -64,55 +119,147 @@ def K_optim(k_list, dataset, tks_vec="message_vector", ft_col="features", distan
     """
     import time
     import datetime
-    from pyspark.ml.evaluation import ClusteringEvaluator
+#     from pyspark.ml.evaluation import ClusteringEvaluator
     from pathlib import Path
+    from multiprocessing.pool import ThreadPool
+
     
     dataset = kmeans_preproc(dataset, tks_vec)
     
-    # Evaluate clustering by computing Silhouette score
-    evaluator = ClusteringEvaluator(distanceMeasure="cosine")
+#     # Evaluate clustering by computing Silhouette score
+#     evaluator = ClusteringEvaluator(distanceMeasure="cosine")
+    
+    if n_cores > 1:
+        # allow up to 5 concurrent threads
+        pool = ThreadPool(n_cores) 
 
-    kmeans_models = []
-    clustering_model = []
-    wsse = []
-    silhouette = []
+        # run the tasks 
+        models_k = pool.map(lambda k: train_kmeans(dataset, ft_col=ft_col, k=k, distance="cosine",
+                                                  initSteps=initSteps, tol=tol, maxIter=maxIter, 
+                                                  log_path=log_path), k_list)
+        clustering_models = [k_dict["model"] for k_dict in models_k]
+        wsse = [k_dict["wsse"] for k_dict in models_k]
+        silhouette = [k_dict["asw"] for k_dict in models_k]
 
-    for i, k in enumerate(k_list):
+    #     wsse = pool.map(lambda i: compute_metrics(model_list=clustering_model index=i, metric="wsse", distance=distance),
+    #                     range(len(k_list)))
+    #     silhouette = pool.map(lambda i: compute_metrics(model_list=clustering_model index=i, metric="asw", distance=distance),
+    #                           range(len(k_list)))
+
+    else:
+        clustering_models = []
+        wsse = []
+        silhouette = []
+        for i, k in enumerate(k_list):
+
+            start_time = time.time()
+            start_time_string = datetime.datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')
             
-        start_time = time.time()
-        start_time_string = datetime.datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')
-
-        clustering_model.append(train_kmeans(dataset, ft_col=ft_col, k=k, distance="cosine",
-                                             initSteps=initSteps, tol=tol, maxIter=maxIter))
-
-        # compute metrics   
-        wsse.append(clustering_model[i].summary.trainingCost)
-        silhouette.append(evaluator.evaluate(clustering_model[i].summary.predictions))
-        
-        if log_path:
-            log_path = Path(log_path)
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(log_path, "a") as log:
-                log.write("With K={}\n\n".format(k))
-                log.write("Started at: {}\n".format(start_time_string))
-                log.write("Within Cluster Sum of Squared Errors = " + str(round(wsse[i],4)))
-                log.write("\nSilhouette with cosine distance = " + str(round(silhouette[i],4)))
-
-                log.write("\nTime elapsed: {} minutes and {} seconds.".format(int((time.time() - start_time)/60), 
-                                                                          int((time.time() - start_time)%60)))
-                log.write('\n--'*30 + "\n\n")
-        else:
-            print("With K={}\n".format(k))
+            print("Training for K={}".format(k))
             print("Started at: {}\n".format(start_time_string))
-            print("Within Cluster Sum of Squared Errors = " + str(round(wsse[i],4)))
-            print("Silhouette with cosine distance = " + str(round(silhouette[i],4)))
+        
+            model_k = train_kmeans(dataset, ft_col=ft_col, k=k, distance="cosine",
+                                   initSteps=initSteps, tol=tol, maxIter=maxIter, log_path=log_path)
 
             print("\nTime elapsed: {} minutes and {} seconds.".format(int((time.time() - start_time)/60), 
                                                                       int((time.time() - start_time)%60)))
             print('--'*30)
+
+            # compute metrics
+            clustering_models.append(model_k["model"])
+            wsse.append(model_k["wsse"])
+            silhouette.append(model_k["asw"])
             
-    res = {"model": clustering_model, "wsse": wsse, "silhouette": silhouette}
+    res = {"model": clustering_models, "wsse": wsse, "silhouette": silhouette}
     return(res)
+
+# def K_optim_parallel_old(k_list, dataset, tks_vec="message_vector", ft_col="features", distance="cosine", 
+#             initSteps=10, tol=0.0001, maxIter=30, n_cores=8, log_path=None):
+#     """Train K-Means model for different K values.
+    
+#     -- params:
+#     k_list (list): grid of K values to try
+#     dataset (pyspark.sql.dataframe.DataFrame): data frame with a vector column with features for the kmeans algorithm
+#     tks_vec (string): name of the word2vec representations column
+#     ft_col (string): name of the features column
+#     distance ("euclidean" or "cosine"): distance measure for the kmeans algorithm
+#     initStep (int): number of different random intializations for the kmeans algorithm
+#     tol (int): tolerance for kmeans algorithm convergence
+#     maxIter (int): maximum number of iterations for the kmeans algorithm
+#     n_cores (int): number of cores to use
+#     log_path (string): where to save optimization stats. Default None (no saving)
+    
+#     Returns:
+#     res (dict): dictionary with grid of trained models and evaluation metrics. Keys:{"model", "wsse", "silhouette"}
+#     """
+#     import time
+#     import datetime
+# #     from pyspark.ml.evaluation import ClusteringEvaluator
+#     from pathlib import Path
+#     from multiprocessing.pool import ThreadPool
+
+    
+#     dataset = kmeans_preproc(dataset, tks_vec)
+    
+# #     # Evaluate clustering by computing Silhouette score
+# #     evaluator = ClusteringEvaluator(distanceMeasure="cosine")
+
+# #     clustering_model = []
+# #     wsse = []
+# #     silhouette = []
+
+#     # allow up to 5 concurrent threads
+#     pool = ThreadPool(n_cores) 
+    
+#     # run the tasks 
+#     results = pool.map(lambda k: train_kmeans(dataset, ft_col=ft_col, k=k, distance="cosine",
+#                                               initSteps=initSteps, tol=tol, maxIter=maxIter, 
+#                                               log_path=log_path), k_list)
+#     clustering_model = [k_dict["model"] for k_dict in results]
+#     wsse = [k_dict["wsse"] for k_dict in results]
+#     silhouette = [k_dict["asw"] for k_dict in results]
+
+# #     wsse = pool.map(lambda i: compute_metrics(model_list=clustering_model index=i, metric="wsse", distance=distance),
+# #                     range(len(k_list)))
+# #     silhouette = pool.map(lambda i: compute_metrics(model_list=clustering_model index=i, metric="asw", distance=distance),
+# #                           range(len(k_list)))
+        
+# #     for i, k in enumerate(k_list):
+            
+# #         start_time = time.time()
+# #         start_time_string = datetime.datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')
+
+# #         clustering_model.append(train_kmeans(dataset, ft_col=ft_col, k=k, distance="cosine",
+# #                                              initSteps=initSteps, tol=tol, maxIter=maxIter))
+
+# #         # compute metrics   
+# #         wsse.append(clustering_model[i].summary.trainingCost)
+# #         silhouette.append(evaluator.evaluate(clustering_model[i].summary.predictions))
+        
+# #         if log_path:
+# #             log_path = Path(log_path)
+# #             log_path.parent.mkdir(parents=True, exist_ok=True)
+# #             with open(log_path, "a") as log:
+# #                 log.write("With K={}\n\n".format(k))
+# #                 log.write("Started at: {}\n".format(start_time_string))
+# #                 log.write("Within Cluster Sum of Squared Errors = " + str(round(wsse[i],4)))
+# #                 log.write("\nSilhouette with cosine distance = " + str(round(silhouette[i],4)))
+
+# #                 log.write("\nTime elapsed: {} minutes and {} seconds.\n".format(int((time.time() - start_time)/60), 
+# #                                                                           int((time.time() - start_time)%60)))
+# #                 log.write('--'*30 + "\n\n")
+# #         else:
+# #             print("With K={}\n".format(k))
+# #             print("Started at: {}\n".format(start_time_string))
+# #             print("Within Cluster Sum of Squared Errors = " + str(round(wsse[i],4)))
+# #             print("Silhouette with cosine distance = " + str(round(silhouette[i],4)))
+
+# #             print("\nTime elapsed: {} minutes and {} seconds.".format(int((time.time() - start_time)/60), 
+# #                                                                       int((time.time() - start_time)%60)))
+# #             print('--'*30)
+            
+#     res = {"model": clustering_model, "wsse": wsse, "silhouette": silhouette}
+#     return(res)
 
 def plot_metrics(results):
     """Plot the trends of evaluation metrics from the output of K_optim."""
@@ -223,8 +370,8 @@ def kmeans_predict(dataset, model, pred_mode="static", new_cluster_thresh=None, 
     return(pred)
     
 def kmeans_inference(original_data, msg_col, id_col, w2v_model_path, tks_vec, ft_col, kmeans_mode, kmeans_model_path,
-                     pred_mode="static", new_cluster_thresh=None, #update_model_path=None,
-                     distance="cosine", opt_initSteps=10, opt_tol=0.0001, opt_maxIter=30, #K_optim
+                     pred_mode="static", new_cluster_thresh=None, k_list=[12,16,20], #update_model_path=None,
+                     distance="cosine", opt_initSteps=10, opt_tol=0.0001, opt_maxIter=30, log_path=None, n_cores=5, #K_optim
                      tr_initSteps=200, tr_tol=0.000001, tr_maxIter=100, #train_kmeans
                     ):
     from language_models import w2v_preproc
@@ -241,22 +388,27 @@ def kmeans_inference(original_data, msg_col, id_col, w2v_model_path, tks_vec, ft
     model_path (string): path where to load pre-trained word2vec model
     tks_vec (string): name of the word2vec representations column
     ft_col (string): name of the features column
-    kmeans_mode ("load" or "train"): kmeans mode: "load" uses pre-trained model, while "train" performs online training
+    kmeans_mode (\"load\" or \"train\"): kmeans mode: \"load\" uses pre-trained model, while \"train\" performs online training
     kmeans_model_path (string): path to pre-trained model (Specify None for re-training)
-    pred_mode ("static" or "update"): prediction mode: "static" does not allow for creating new clusters
+    pred_mode (\"static\" or \"update\"): prediction mode: \"static\" does not allow for creating new clusters
     new_cluster_thresh (float): distance threshold: if closest centroid is more distant than new_cluster_thresh 
                                 then a new cluster is created for the new observation
-    distance ("euclidean" or "cosine"): distance measure for the kmeans algorithm
+    k_list (list): grid of K values to try
+    distance (\"euclidean\" or \"cosine\"): distance measure for the kmeans algorithm
     opt_initStep (int): number of different random intializations for the kmeans algorithm in the optimization phase
     opt_tol (int): tolerance for kmeans algorithm convergence in the optimization phase
     opt_maxIter (int): maximum number of iterations for the kmeans algorithm in the optimization phase
+    n_cores (int): number of cores to use
+    log_path (string): where to save optimization stats. Default None (no saving)
     tr_initStep (int): number of different random intializations for the kmeans algorithm in the training phase
     tr_tol (int): tolerance for kmeans algorithm convergence in the training phase
     tr_maxIter (int): maximum number of iterations for the kmeans algorithm in the training phase
     
     Returns:
-    original_data (pyspark.sql.dataframe.DataFrame): the input data frame with an extra "prediction" column
+    original_data (pyspark.sql.dataframe.DataFrame): the input data frame with an extra \"prediction\" column
     """
+    from pathlib import Path
+    
     if kmeans_mode not in ["load", "train"]:
         print("""WARNING: invalid param \"kmeans_mode\". Specify either \"load\" to train load a pre-trained model 
               or \"train\" to train it online.""")
@@ -270,21 +422,14 @@ def kmeans_inference(original_data, msg_col, id_col, w2v_model_path, tks_vec, ft
     else:
         # K_optim()
         # initialize a grid of K (number of clusters) values
-        k_list = range(2, 10)
+#         k_list = [12, 16, 20]
 
         # train for different Ks
         res = K_optim(k_list, dataset=original_data, tks_vec=tks_vec, ft_col=ft_col,
-                      distance=distance, initSteps=opt_initSteps, tol=opt_tol, maxIter=opt_maxIter)
+                      distance=distance, initSteps=opt_initSteps, tol=opt_tol, maxIter=opt_maxIter, 
+                      n_cores=n_cores, log_path=log_path)
         
         k_sil = get_k_best(res, "silhouette")
-#         dagnostic = plot_metrics(res)
-
-        # kmeans_model = train_kmeans()
-    
-        ## print in a diagnostic file -- TO DO
-    #     start_time = time.time()
-    #     start_time_string = datetime.datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')
-    #     print("Started at: {}\n".format(start_time_string))
 
         if pred_mode=="update":
             save_mode = "overwrite"
@@ -297,26 +442,14 @@ def kmeans_inference(original_data, msg_col, id_col, w2v_model_path, tks_vec, ft
         else:
             kmeans_model_path = None
             save_mode = "new"
-
+        
+        best_k_log_path = Path(log_path).parent / "best_K={}.txt".format(k_sil)
         original_data = kmeans_preproc(original_data, tks_vec)
         kmeans_model = train_kmeans(original_data, ft_col=ft_col, k=k_sil, distance=distance,
                                     initSteps=tr_initSteps, tol=tr_tol, maxIter=tr_maxIter,
-                                    save_path=kmeans_model_path, mode=save_mode)
+                                    save_path=kmeans_model_path, mode=save_mode, log_path=best_k_log_path)
 
-        ## print in a diagnostic file -- TO DO
-
-#         # compute metrics   
-#         best_wsse = kmeans_model.summary.trainingCost
-#         best_silhouette = evaluator.evaluate(kmeans_model.summary.predictions)
-
-#         print("With K={}".format(k_sil))
-#         print("Within Cluster Sum of Squared Errors = " + str(round(best_wsse,4)))
-#         print("Silhouette with cosine distance = " + str(round(best_silhouette,4)))
-
-#         print("\nTime elapsed: {} minutes and {} seconds.".format(int((time.time() - start_time)/60), 
-#                                                                   int((time.time() - start_time)%60)))
-#         print('--'*30)
-    original_data = kmeans_predict(original_data, kmeans_model, pred_mode=pred_mode, 
+    original_data = kmeans_predict(original_data, kmeans_model["model"], pred_mode=pred_mode, 
                                   new_cluster_thresh=None, update_model_path=kmeans_model_path)
     
     return(original_data)
