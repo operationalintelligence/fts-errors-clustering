@@ -9,9 +9,13 @@ notebooks/*.csv
 # Jupyter Notebooks tutorials
 notebooks/*utorial*
 notebooks/.sys.*
-notebooks/ftp_clusters.ipynb
+# notebooks/ftp_clusters.ipynb
 notebooks/external/*
+notebooks/experimental
 notebooks/Untitled*
+
+# Outputs
+notebooks/results
 
 # Swan project
 .swanproject
