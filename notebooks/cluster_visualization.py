@@ -280,6 +280,7 @@ def tokens_cloud(dataset, msg_col, clust_col="prediction", save_path=None,
     import pyspark.sql.functions as F
     from matplotlib import pyplot as plt
     from abstraction_utils import abstract_params
+    from pathlib import Path
 
     for clust_id in dataset.select(clust_col).distinct().collect():
         cluster_messages = dataset.filter(F.col(clust_col)==clust_id[clust_col]).select(msg_col).collect()
