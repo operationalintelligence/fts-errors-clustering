@@ -49,7 +49,7 @@ def tokenizer(dataset, err_col, id_col="msg_id"):
     return(vector_data)
 
 def train_w2v(dataset, tks_col="stop_token_1", id_col="msg_id", out_col='message_vector', 
-              vec_size=3, min_count=1, save_path=None, mode="new"):
+              vec_size=3, min_count=1, win_size=8, save_path=None, mode="new", n_cores=12):
     """Train Word2Vec model on the input tokens column.
     
     -- params:
@@ -59,25 +59,29 @@ def train_w2v(dataset, tks_col="stop_token_1", id_col="msg_id", out_col='message
     out_col (string): name of the output column for the word2vec vector representation of the messages
     vec_size (int): dimension of the word2vec embedded space
     min_count (int): minimum frequency for tokens to be considered in the training
+    win_size (int): window size for word2vec model
     save_path (string): path where to save the trained model. Default is None (no saving)
     mode ("new" or "overwrite"): whether to save new file or overwrite pre-existing one.
+    n_cores (int): number of cores for word2vec training
     
     Returns:
     model (pyspark.ml.feature.Word2VecModel): trained Word2vec model
     """
     from pyspark.ml.feature import Word2Vec
-
+    
     # intialise word2vec
-    word2vec = Word2Vec(vectorSize = vec_size, minCount = min_count, inputCol = tks_col, outputCol = out_col)
+    word2vec = Word2Vec(vectorSize = vec_size, minCount = min_count, windowSize = win_size,
+                            inputCol = tks_col, outputCol = out_col, numPartitions = n_cores)
 
     train_data = dataset.select(id_col, tks_col)
     model = word2vec.fit(train_data)
     
     if save_path:
+        outname = "{}/w2v_sample_app_example_VS={}_MC={}_WS={}".format(save_path, vec_size, min_count, win_size)
         if mode=="overwrite":
-            model.write().overwrite().save(save_path)
+            model.write().overwrite().save(outname)
         else:
-            model.save(save_path)
+            model.save(outname)
     return(model)
 
 def load_w2v(model_path):
