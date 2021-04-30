@@ -2,7 +2,7 @@ Django==2.2.8
 elasticsearch==7.0.4
 pytz==2019.2
 # sqlparse==0.3.0
-urllib3==1.25.3
+urllib3==1.25.8
 daal4py==2019.5
 dask==1.1.4
 editdistance==0.5.3
